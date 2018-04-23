@@ -34,7 +34,7 @@ class SDM(object):
             self.numHL = numHL
             self.radius = radius
     
-    def __init__(self, sc,min,max,dim,numHL,radius,mode='nofile'):
+    def __init__(self, sc,min,max,dim,numHL,radius,mode='nofile', seed = None):
         """returns an instance of SDM.
             Paramaters:
                 min: minimum range value of Integer SDM
@@ -53,9 +53,10 @@ class SDM(object):
             raise AssertionError("mode "+mode+" not defined")
         self.mode = mode
         self.addresses = None
+        self.seed = seed
 
         
-    def __init__(self,sc,settings,mode='nofile'):
+    def __init__(self,sc,settings,mode='nofile',seed = None):
         """returns an instance of SDM.
             Paramaters:
                 settings: an instance of SDM.Settings
@@ -74,6 +75,7 @@ class SDM(object):
             raise AssertionError("mode '"+mode+"' not defined")
         self.mode = mode
         self.addresses = None
+        self.seed = seed
         
     @staticmethod
     def create_addresses_DF(settings, random_seed = None):
@@ -124,7 +126,7 @@ class SDM(object):
         """
 
         if self.mode == 'nofile':
-            self.addresses = SDM.create_addresses_DF(self.settings)
+            self.addresses = SDM.create_addresses_DF(self.settings,random_seed= self.seed)
             self.counters = np.zeros((self.settings.numHL,(self.settings.max-self.settings.min+1),self.settings.dim))
         elif self.mode == 'parquet-hdf5':
             if not isinstance(file,str):
@@ -132,7 +134,7 @@ class SDM(object):
             
             self.file = file
             
-            self.addresses = SDM.create_addresses_DF(self.settings)
+            self.addresses = SDM.create_addresses_DF(self.settings,random_seed=self.seed)
             SDM.write_addresses(self.addresses, file+"addresses.parquet", 'overwrite' if overwrite else 'error')
             with h5py.File(file+"counters.hdf5", 'w') as countersF5:
                 countersF5.attrs['min'] = self.settings.min
@@ -151,7 +153,7 @@ class SDM(object):
         elif self.mode == 'hdf5':
             if not isinstance(file,str):
                 raise TypeError("Wrong type 'file'.")
-            random_seed = np.random.randint(0,100000)
+            random_seed = self.seed if self.seed != None else np.random.randint(0,100000)
             self.file = file
             with h5py.File(file+"counters.hdf5", 'w') as countersF5:
                 countersF5.attrs['seed'] = random_seed
@@ -218,7 +220,8 @@ class SDM(object):
             activatedCounters = list()
             for index in activated:
                 activatedCounters.append(self.counters[index])
-            return list(np.argmax(np.sum(activatedCounters,axis=0),axis=0))
+            
+            return np.argmax(np.sum(activatedCounters,axis=0),axis=0)
         if self.mode == 'parquet-hdf5' or self.mode == 'hdf5':
             with h5py.File(self.file+"counters.hdf5", 'r') as countersF5:
 
@@ -226,4 +229,4 @@ class SDM(object):
                 for index in activated:
                     activatedCounters.append(countersF5[str(index)].value)
 
-            return list(np.argmax(np.sum(activatedCounters,axis=0),axis=0))
+            return np.argmax(np.sum(activatedCounters,axis=0),axis=0)
