@@ -134,41 +134,39 @@ class SDM(object):
             
             self.addresses = SDM.create_addresses_DF(self.settings)
             SDM.write_addresses(self.addresses, file+"addresses.parquet", 'overwrite' if overwrite else 'error')
-            countersF5 = h5py.File(file+"counters.hdf5", 'w')
-            countersF5.attrs['min'] = self.settings.min
-            countersF5.attrs['max'] = self.settings.max
+            with h5py.File(file+"counters.hdf5", 'w') as countersF5:
+                countersF5.attrs['min'] = self.settings.min
+                countersF5.attrs['max'] = self.settings.max
 
-            countersF5.attrs['numHL'] = self.settings.numHL
-            countersF5.attrs['dim'] = self.settings.dim
-            countersF5.attrs['radius'] = self.settings.radius
-            countersF5.attrs['mode'] = self.mode
-            ## counters for one hard location
-            counter = np.zeros((self.settings.max-self.settings.min+1,self.settings.dim))
-            #for each HL create a dataset with zeroes initialized
-            for i in range(self.settings.numHL):
-                countersF5.create_dataset(str(i),data=counter)
-            countersF5.close()
+                countersF5.attrs['numHL'] = self.settings.numHL
+                countersF5.attrs['dim'] = self.settings.dim
+                countersF5.attrs['radius'] = self.settings.radius
+                countersF5.attrs['mode'] = self.mode
+                ## counters for one hard location
+                counter = np.zeros((self.settings.max-self.settings.min+1,self.settings.dim))
+                #for each HL create a dataset with zeroes initialized
+                for i in range(self.settings.numHL):
+                    countersF5.create_dataset(str(i),data=counter)
 
         elif self.mode == 'hdf5':
             if not isinstance(file,str):
                 raise TypeError("Wrong type 'file'.")
             random_seed = np.random.randint(0,100000)
             self.file = file
-            countersF5 = h5py.File(file+"counters.hdf5", 'w')
-            countersF5.attrs['seed'] = random_seed
-            countersF5.attrs['min'] = self.settings.min
-            countersF5.attrs['max'] = self.settings.max
-            countersF5.attrs['numHL'] = self.settings.numHL
-            countersF5.attrs['dim'] = self.settings.dim
-            countersF5.attrs['radius'] = self.settings.radius
-            countersF5.attrs['mode'] = self.mode
+            with h5py.File(file+"counters.hdf5", 'w') as countersF5:
+                countersF5.attrs['seed'] = random_seed
+                countersF5.attrs['min'] = self.settings.min
+                countersF5.attrs['max'] = self.settings.max
+                countersF5.attrs['numHL'] = self.settings.numHL
+                countersF5.attrs['dim'] = self.settings.dim
+                countersF5.attrs['radius'] = self.settings.radius
+                countersF5.attrs['mode'] = self.mode
 
-            ## counters for one hard location
-            counter = np.zeros((self.settings.max-self.settings.min+1,self.settings.dim))
-            #for each HL create a dataset with zeroes initialized
-            for i in range(self.settings.numHL):
-                countersF5.create_dataset(str(i),data=counter)
-            countersF5.close()
+                ## counters for one hard location
+                counter = np.zeros((self.settings.max-self.settings.min+1,self.settings.dim))
+                #for each HL create a dataset with zeroes initialized
+                for i in range(self.settings.numHL):
+                    countersF5.create_dataset(str(i),data=counter)
 
 
                         
@@ -177,22 +175,21 @@ class SDM(object):
         SDM.sc = sc
         #read hdf5 metadata and get the info of SDM then load the addresses to DF 
         spark = SparkSession.builder.appName("sdm").config(conf=SparkConf()).getOrCreate()
+        with h5py.File(file+"counters.hdf5", 'r') as F5:
+            settings = SDM.Settings(int(F5.attrs['min']),int(F5.attrs['max']),int(F5.attrs['dim']),\
+                                int(F5.attrs['numHL']),int(F5.attrs['radius']))
+            mode = F5.attrs['mode']
+            
+            sdm = SDM(sc,settings, mode = mode)
+            random_seed = None
+            sdm.file = file
+            if mode == 'parquet-hdf5':
+                sdm.addresses = spark.read.parquet(file+"addresses.parquet")
 
-        F5 = h5py.File(file+"counters.hdf5", 'r')
-        settings = SDM.Settings(int(F5.attrs['min']),int(F5.attrs['max']),int(F5.attrs['dim']),\
-                               int(F5.attrs['numHL']),int(F5.attrs['radius']))
-        mode = F5.attrs['mode']
+            elif mode == 'hdf5': 
+                random_seed = int(F5.attrs['seed'])
+                sdm.addresses = SDM.create_addresses_DF(settings,random_seed=random_seed)
         
-        sdm = SDM(sc,settings, mode = mode)
-        random_seed = None
-        sdm.file = file
-        if mode == 'parquet-hdf5':
-            sdm.addresses = spark.read.parquet(file+"addresses.parquet")
-
-        elif mode == 'hdf5': 
-            random_seed = int(F5.attrs['seed'])
-            sdm.addresses = SDM.create_addresses_DF(settings,random_seed=random_seed)
-        F5.close()
         return sdm
 
     
@@ -205,14 +202,13 @@ class SDM(object):
                     self.counters[index][word[i]][i]=self.counters[index][word[i]][i]+1
         
         elif self.mode == 'parquet-hdf5' or self.mode == 'hdf5':
-            countersF5 = h5py.File(self.file+"counters.hdf5", 'r+')
-            for index in activated:
-                dataset = countersF5[str(index)]
-                counter = dataset.value
-                for i in range(len(word)):
-                    counter[word[i]][i]=counter[word[i]][i]+1
-                dataset[...] = counter
-            countersF5.close()
+            with h5py.File(self.file+"counters.hdf5", 'r+') as countersF5:
+                for index in activated:
+                    dataset = countersF5[str(index)]
+                    counter = dataset.value
+                    for i in range(len(word)):
+                        counter[word[i]][i]=counter[word[i]][i]+1
+                    dataset[...] = counter
 
                     
     def read(self, word):
@@ -224,9 +220,10 @@ class SDM(object):
                 activatedCounters.append(self.counters[index])
             return list(np.argmax(np.sum(activatedCounters,axis=0),axis=0))
         if self.mode == 'parquet-hdf5' or self.mode == 'hdf5':
-            countersF5 = h5py.File(self.file+"counters.hdf5", 'r')
-            activatedCounters = list()
-            for index in activated:
-                activatedCounters.append(countersF5[str(index)].value)
-            countersF5.close()
+            with h5py.File(self.file+"counters.hdf5", 'r') as countersF5:
+
+                activatedCounters = list()
+                for index in activated:
+                    activatedCounters.append(countersF5[str(index)].value)
+
             return list(np.argmax(np.sum(activatedCounters,axis=0),axis=0))

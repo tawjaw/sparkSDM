@@ -46,7 +46,7 @@ for test in range(3):
     #parquet-hdf5 memory
     start = time.time()
     sdm = SDM(sc,settings,mode='parquet-hdf5')
-    sdm.create(file+'-parquet-hdf5\\')
+    sdm.create(file+'-parquet-hdf5/')
     end = time.time()
     testTimeCreate[test][1] =end - start
     print("test: " + str(test)+" parquet-hdf5: Done")
@@ -54,7 +54,7 @@ for test in range(3):
     #hdf5 memory
     start = time.time()
     sdm = SDM(sc,settings,mode='hdf5')
-    sdm.create(file+'-mmhdf5\\')
+    sdm.create(file+'-mmhdf5/')
     end = time.time()
     testTimeCreate[test][2] =end - start
     print("test: " + str(test)+" hdf5: Done")   
